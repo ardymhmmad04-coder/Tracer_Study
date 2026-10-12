@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="id"><head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dashboard Alumni – Tracer Study</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head><body>
+<div id="app" :class="{'nav-open':navOpen}">
+  <div class="scrim" @click="navOpen=false"></div>
+  <aside class="side">
+    <div class="brand"><span class="logo"><icon n="cap"></icon></span><div><b>Tracer Study</b><small>{{ cfg.SCHOOL }}</small></div></div>
+    <nav><a v-for="m in menu" :key="m.k" :class="{on:view===m.k}" href="#" @click.prevent="go(m.k)"><icon :n="m.i"></icon>{{ m.t }}</a></nav>
+  </aside>
+
+  <main>
+    <header class="top">
+      <button class="burger" @click="navOpen=!navOpen" aria-label="Menu"><icon n="menu"></icon></button>
+      <div class="ttl"><h1>Dashboard Alumni</h1><p>Tracer Study dan Statistik Lulusan</p>
+        <span class="chip"><icon n="cal"></icon>{{ periode }}</span></div>
+      <div class="filters">
+        <label class="inp search"><icon n="search"></icon><input v-model="q" placeholder="Cari nama alumni…"></label>
+        <select v-model="fTahun"><option value="">Semua tahun lulus</option><option v-for="t in tahunList" :key="t" :value="t">{{ t }}</option></select>
+        <select v-model="fJurusan"><option value="">Semua program keahlian</option><option v-for="j in jurusanList" :key="j" :value="j">{{ j }}</option></select>
+      </div>
+    </header>
+
+    <div v-if="error" class="alert">Data gagal dimuat: {{ error }}</div>
+    <div v-else-if="loading" class="empty">Memuat data alumni…</div>
+
+    <template v-else>
+    <!-- DASHBOARD -->
+    <section v-if="view==='dashboard'">
+      <div class="cards">
+        <div v-for="c in cards" :key="c.t" class="card stat" :style="{'--a':c.c}">
+          <span class="ico"><icon :n="c.i"></icon></span>
+          <div><small>{{ c.t }}</small><strong>{{ c.v }}</strong><em>{{ c.s }}</em></div>
+        </div>
+      </div>
+      <div class="info"><icon n="info"></icon>Belum bekerja / mencari kerja: <b>{{ st.belum }}</b> alumni<span v-if="st.total"> ({{ pct(st.belum) }})</span></div>
+      <div class="grid">
+        <div class="card"><h3>Status Alumni</h3>
+          <chart-box v-if="st.total" type="doughnut" :data="dStatus" :options="oDonut"></chart-box><div v-else class="empty">Belum ada data</div></div>
+        <div class="card"><h3>Lulusan per Tahun</h3>
+          <chart-box v-if="st.total" type="bar" :data="dTahun" :options="oBar"></chart-box><div v-else class="empty">Belum ada data</div></div>
+        <div class="card"><h3>Program Keahlian</h3>
+          <chart-box v-if="st.total" type="bar" :data="dJurusan" :options="oHBar"></chart-box><div v-else class="empty">Belum ada data</div></div>
+        <div class="card"><h3>Rentang Gaji Bulanan <small>bekerja &amp; wirausaha</small></h3>
+          <chart-box v-if="gajiN" type="bar" :data="dGaji" :options="oBar"></chart-box><div v-else class="empty">Data gaji belum tersedia</div></div>
+      </div>
+    </section>
+
+    <!-- STATISTIK -->
+    <section v-else-if="view==='statistik'">
+      <div class="grid">
+        <div class="card"><h3>Ringkasan Keterserapan Lulusan</h3>
+          <div v-if="st.total" class="bars"><div v-for="r in rates" :key="r.t"><span>{{ r.t }}<b>{{ r.n }} · {{ pct(r.n) }}</b></span><i><u :style="{width:(st.total?r.n/st.total*100:0)+'%',background:r.c}"></u></i></div></div>
+          <div v-else class="empty">Belum ada data</div></div>
+        <div class="card"><h3>Lama Mencari Pekerjaan</h3>
+          <chart-box v-if="dLama.labels.length" type="bar" :data="dLama" :options="oBar"></chart-box><div v-else class="empty">Belum ada data</div></div>
+        <div class="card wide"><h3>Kendala Mendapatkan Pekerjaan</h3>
+          <chart-box v-if="dKendala.labels.length" type="bar" :data="dKendala" :options="oHBar"></chart-box><div v-else class="empty">Belum ada data</div></div>
+      </div>
+    </section>
+
+    <!-- TABEL -->
+    <section v-else>
+      <div class="card">
+        <div class="thead"><h3>{{ cur.t }} <small>{{ sorted.length }} alumni</small></h3>
+          <select v-if="view==='alumni'" v-model="fStatus"><option value="">Semua status</option><option v-for="s in statusList" :key="s">{{ s }}</option></select></div>
+        <div class="tw"><table>
+          <thead><tr><th v-for="c in cur.cols" :key="c.k" @click="sortBy(c.k)">{{ c.t }}<i v-if="sk===c.k">{{ sd>0?'▲':'▼' }}</i></th></tr></thead>
+          <tbody>
+            <tr v-for="r in paged" :key="r.id" @click="sel=r">
+              <td v-for="c in cur.cols" :key="c.k" :data-l="c.t"><span v-if="c.k==='status'" class="badge" :style="{'--a':colors[r.status]}">{{ r.status }}</span><template v-else>{{ val(r,c.k) }}</template></td></tr>
+            <tr v-if="!paged.length"><td :colspan="cur.cols.length" class="empty">Tidak ada data yang sesuai</td></tr>
+          </tbody></table></div>
+        <div class="pager"><button :disabled="page<=1" @click="page--">‹ Sebelumnya</button><span>Hal. {{ page }} / {{ pages }}</span><button :disabled="page>=pages" @click="page++">Berikutnya ›</button></div>
+      </div>
+    </section>
+    </template>
+  </main>
+
+  <div v-if="sel" class="modal" @click.self="sel=null"><div class="card sheet">
+    <button class="x" @click="sel=null" aria-label="Tutup">✕</button>
+    <h2>{{ sel.nama }}</h2><span class="badge" :style="{'--a':colors[sel.status]}">{{ sel.status }}</span>
+    <dl><template v-for="d in detail(sel)" :key="d[0]"><dt>{{ d[0] }}</dt><dd>{{ d[1] }}</dd></template></dl>
+  </div></div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/vue@3.4.38/dist/vue.global.prod.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+<script src="js/config.js"></script>
+<script src="js/app.js"></script>
+</body></html>
